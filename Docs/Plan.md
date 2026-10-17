@@ -1,0 +1,319 @@
+基于你描述的方案，我为你整理了一份完整的项目实现方案。整体架构围绕“手机端采集 → 服务器中转/存储 → 手机端查询展示”这条主线展开，下面从架构到具体实现逐一说明。
+
+---
+
+## 一、整体架构设计
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Android 手机端 App                    │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │ FLP 定位模块 │→ │ WebSocket   │→ │ 百度地图展示模块 │  │
+│  │ (前台服务)   │  │ 客户端      │  │ (实时位置+轨迹)  │  │
+│  └─────────────┘  └─────────────┘  └─────────────────┘  │
+│         ↑                ↑                ↑              │
+│         │                │                │              │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │ 本地缓存     │  │ 断线重连    │  │ 好友管理/查询    │  │
+│  │ (Room/SQLite)│  │ (指数退避)  │  │ 请求             │  │
+│  └─────────────┘  └─────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                              │
+                              │ WebSocket (WSS)
+                              │
+┌─────────────────────────────┴───────────────────────────┐
+│                    WebSocket 服务器                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │
+│  │ 连接管理     │  │ 消息路由    │  │ 位置数据写入     │  │
+│  │ (设备认证)   │  │ (实时转发)  │  │ (时序数据库)     │  │
+│  └─────────────┘  └─────────────┘  └─────────────────┘  │
+│  ┌─────────────┐  ┌─────────────┐                       │
+│  │ 历史轨迹查询 │  │ 权限校验    │                       │
+│  │ 接口         │  │ (Token)     │                       │
+│  └─────────────┘  └─────────────┘                       │
+└─────────────────────────────────────────────────────────┘
+                              │
+                              │
+┌─────────────────────────────┴───────────────────────────┐
+│                        数据库层                           │
+│  ┌─────────────────────┐  ┌─────────────────────────┐   │
+│  │ 时序数据库           │  │ 关系型数据库             │   │
+│  │ (TDengine/InfluxDB)  │  │ (PostgreSQL/MySQL)      │   │
+│  │ 位置轨迹数据         │  │ 用户/设备/关系数据       │   │
+│  └─────────────────────┘  └─────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+```
+
+**核心数据流**：
+
+1. 手机A通过FLP获取定位，通过WebSocket发送给服务器
+2. 服务器将位置写入时序数据库，同时通过WebSocket转发给订阅了A位置的手机B
+3. 手机B收到后在地图上更新A的位置标记
+4. 手机B请求A的历史轨迹时，服务器从时序数据库查询并返回
+
+
+## 二、服务器端实现方案
+
+### 2.1 技术选型
+
+| 组件 | 推荐方案 | 理由 |
+|------|----------|------|
+| WebSocket 框架 | **Node.js + Socket.IO** 或 **Python + FastAPI/websockets** | Socket.IO 提供自动降级、房间管理、自动重连等特性，适合实时通信场景；FastAPI 原生支持 WebSocket 且异步性能好 |
+| 时序数据库 | **TDengine** 或 **InfluxDB** | 轨迹数据天然带时间戳、流量平稳但巨大，时序数据库的写入和查询性能远超关系型数据库 |
+| 关系型数据库 | **PostgreSQL** 或 **MySQL** | 存储用户、设备、好友关系、权限等结构化数据 |
+| 消息队列（可选） | **Redis Pub/Sub** | 当需要横向扩展多个WebSocket实例时，用Redis做跨实例的消息广播 |
+
+### 2.2 核心功能模块
+
+**连接管理**：
+
+每个手机端连接后，服务器需要维护一个映射关系：
+
+```
+deviceId → WebSocket连接
+```
+
+当手机A发送位置时，服务器根据这个映射找到订阅了A位置的其他手机，进行转发。如果只用单个WebSocket实例，这个映射就是一个内存中的Map；如果需要多实例，则用Redis维护。
+
+**消息协议设计**：
+
+建议使用JSON格式定义消息类型，例如：
+
+```json
+// 客户端 → 服务器：上报位置
+{
+  "type": "location_update",
+  "deviceId": "user_a",
+  "timestamp": 1720000000000,
+  "latitude": 39.9042,
+  "longitude": 116.4074,
+  "accuracy": 15.0,
+  "provider": "gps"  // gps / network / fused
+}
+
+// 客户端 → 服务器：查询他人位置
+{
+  "type": "query_location",
+  "targetDeviceId": "user_b"
+}
+
+// 服务器 → 客户端：推送位置
+{
+  "type": "location_push",
+  "deviceId": "user_b",
+  "timestamp": 1720000001000,
+  "latitude": 39.9050,
+  "longitude": 116.4080,
+  "accuracy": 20.0
+}
+
+// 客户端 → 服务器：查询历史轨迹
+{
+  "type": "query_history",
+  "targetDeviceId": "user_b",
+  "startTime": 1719990000000,
+  "endTime": 1720000000000
+}
+```
+
+**位置数据写入**：
+
+服务器收到位置后，除了实时转发，还需要异步写入时序数据库。TDengine 的“一个设备一张表”模型非常适合这个场景——每个设备的位置数据独立存储，查询单个设备某时间段的轨迹性能有数量级提升。
+
+**历史轨迹查询**：
+
+从时序数据库查询指定设备在指定时间段内的所有位置点，按时间排序后返回给请求方。TDengine 针对时序数据的写入、存储、索引、查询都做了特定优化，非常适合这个场景。
+
+### 2.3 服务器安全加固
+
+结合你之前关于端口隐藏的需求，服务器端的安全措施包括：
+
+- **绑定 `127.0.0.1`**：如果使用 Cloudflare Tunnel，WebSocket 服务只监听本地回环，不对外暴露端口
+- **WSS 加密**：WebSocket 连接必须使用 TLS，防止位置数据被中间人窃取
+- **Token 认证**：每个设备连接时携带 JWT Token，服务器验证后才允许建立连接和发送消息
+- **消息频率限制**：限制单个设备的发送频率，防止恶意客户端刷消息
+
+
+## 三、Android 客户端实现方案
+
+### 3.1 定位模块（FLP + 前台服务）
+
+**核心实现要点**：
+
+使用 `FusedLocationProviderClient` 请求高精度定位，设置 `Priority.PRIORITY_HIGH_ACCURACY` 优先使用 GPS：
+
+```kotlin
+val locationRequest = LocationRequest.Builder(
+    Priority.PRIORITY_HIGH_ACCURACY,
+    5000L  // 5秒间隔
+).setMinUpdateIntervalMillis(2000L)
+ .setMaxUpdateDelayMillis(10000L)  // 最大延迟批量上传
+ .build()
+```
+
+**Android 14+ 权限要求**：
+
+从 Android 14 开始，应用必须拥有 `ACCESS_BACKGROUND_LOCATION` 权限才能在后台访问位置，同时前台服务需要声明 `FOREGROUND_SERVICE_LOCATION` 权限。Manifest 中需要声明：
+
+```xml
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+```
+
+**电量优化**：
+
+后台位置收集往往会导致多余的电量消耗，应使用 `setIntervalMillis()` 传递尽可能大的值。如果应用不需要立即获取位置更新，可以使用 `setMaxUpdateDelayMillis()` 设置较大的批量发送间隔。
+
+**前台服务**：
+
+创建一个 `foregroundServiceType="location"` 的前台服务，显示常驻通知，确保系统不会在后台杀死定位进程。同时建议引导用户关闭电池优化，并在 Android 11+ 上手动选择“始终允许”位置权限。
+
+### 3.2 WebSocket 客户端
+
+**推荐库**：
+
+- **Autobahn|Java**：专为 Android 设计的 WebSocket 客户端，回调式 API，成熟稳定
+- **TitanSocket**：Kotlin Multiplatform WebSocket 实现，支持 Android 和 JVM，内置 ping/pong 和自动重连
+
+**断线重连策略**：
+
+采用指数退避算法，断开后延迟 2s、4s、8s... 重新连接，避免频繁重连消耗电量。同时实现心跳机制（每 30-60 秒发送 PING），防止连接被中间设备断开。
+
+**离线缓存**：
+
+当网络不可用时，将位置数据暂存到本地 SQLite 数据库（推荐使用 Room），网络恢复后批量补传。Room 提供了对 SQLite 的抽象层，能很好地处理位置数据的本地存储和查询。
+
+### 3.3 百度地图展示模块
+
+**实时位置展示**：
+
+- 使用百度地图 Android SDK 的 `Marker` 在地图上显示被查询设备的当前位置
+- 通过 WebSocket 收到位置推送后，更新 Marker 的坐标即可
+- 建议使用 `Marker` 的平滑移动动画，避免位置“跳跃”
+
+**历史轨迹展示**：
+
+- 查询到历史轨迹点后，使用 `Polyline` 绘制轨迹线
+- **关键优化**：应只初始化一次 `Polyline`，通过 `setPath()` 动态更新路径，频繁新建 Polyline 会导致 GPU 资源泄漏
+- 轨迹回放可以使用百度地图的 `BMapGLLib.LuShu` 类实现动画播放
+
+**轨迹纠偏**：
+
+百度鹰眼提供了轨迹纠偏能力，包括去噪、抽稀、绑路等步骤，可以过滤掉定位精度较差的轨迹点（如精度大于100米的点）。即使你自建服务器存储轨迹数据，也可以调用鹰眼的纠偏 API 对轨迹进行后处理后再展示。
+
+**坐标系转换**：
+
+FLP 返回的是 WGS-84 坐标，百度地图使用 BD-09 坐标。如果直接使用百度地图 SDK，SDK 内部会自动处理转换；如果使用 WebView 或混合渲染，需要手动引入第三方库（如 gcoord）或调用百度坐标转换 API。
+
+### 3.4 好友管理与查询
+
+- 用户通过设备ID或邀请码添加好友
+- 好友关系存储在服务器端的关系型数据库中
+- 只有互为好友的设备才能查询对方的位置信息
+- 查询请求通过 WebSocket 发送，服务器验证关系后返回结果
+
+
+## 四、数据库设计
+
+### 4.1 时序数据库（位置轨迹）
+
+以 TDengine 为例，建议的建表方式：
+
+```sql
+-- 创建超级表（所有设备共享表结构）
+CREATE STABLE location_history (
+    ts TIMESTAMP,
+    latitude DOUBLE,
+    longitude DOUBLE,
+    accuracy DOUBLE,
+    provider BINARY(20)
+) TAGS (device_id BINARY(64));
+
+-- 每个设备自动创建子表，插入时自动建表
+INSERT INTO location_user_a USING location_history TAGS ('user_a')
+VALUES (NOW, 39.9042, 116.4074, 15.0, 'gps');
+```
+
+TDengine 的超级表概念让多设备间的聚合查询变得简单，同时“一个设备一张表”保证了单设备时间段查询的极致性能。
+
+### 4.2 关系型数据库（用户与关系）
+
+```sql
+-- 用户/设备表
+CREATE TABLE devices (
+    device_id VARCHAR(64) PRIMARY KEY,
+    device_name VARCHAR(128),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 好友关系表
+CREATE TABLE friendships (
+    id SERIAL PRIMARY KEY,
+    device_id_a VARCHAR(64) REFERENCES devices(device_id),
+    device_id_b VARCHAR(64) REFERENCES devices(device_id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(device_id_a, device_id_b)
+);
+
+-- 认证Token表
+CREATE TABLE tokens (
+    token VARCHAR(256) PRIMARY KEY,
+    device_id VARCHAR(64) REFERENCES devices(device_id),
+    expires_at TIMESTAMP
+);
+```
+
+
+## 五、部署方案
+
+### 5.1 服务器部署
+
+结合你之前讨论的 Cloudflare Tunnel 方案：
+
+1. WebSocket 服务绑定 `127.0.0.1:9099`，不对外暴露端口
+2. 使用 Cloudflare Named Tunnel 将服务映射到固定域名（如 `rtls.yourdomain.com`）
+3. 手机端通过 `wss://rtls.yourdomain.com` 连接
+4. 服务器上部署 TDengine 和 PostgreSQL
+
+### 5.2 百度地图 API 配置
+
+1. 在百度地图开放平台注册开发者账号
+2. 创建应用，获取 Android SDK 的 API Key（AK）
+3. 在 Android 项目中配置 AK
+4. 如需使用鹰眼轨迹纠偏服务，额外创建鹰眼服务并获取 Service ID
+
+### 5.3 内网穿透 vs 云服务器
+
+| 方案 | 优点 | 缺点 |
+|------|------|------|
+| Cloudflare Tunnel + 内网服务器 | 无需公网IP，零端口暴露，自带TLS | 依赖Cloudflare，流量经过第三方 |
+| 云服务器（公网IP） | 完全自主可控 | 需自行处理端口安全和TLS |
+
+
+## 六、开发路线图建议
+
+| 阶段 | 目标 | 关键产出 |
+|------|------|----------|
+| **第1阶段** | 跑通核心链路 | 服务器接收位置并转发；Android端能发送位置并在地图上看到自己的位置 |
+| **第2阶段** | 实现双设备互查 | 两台手机互相查询对方位置，实时更新地图标记 |
+| **第3阶段** | 历史轨迹 | 服务器存储轨迹；Android端查询并绘制历史轨迹线 |
+| **第4阶段** | 安全加固 | WSS、Token认证、Cloudflare Tunnel部署 |
+| **第5阶段** | 体验优化 | 电量优化、轨迹纠偏、断线重连、离线缓存 |
+
+
+## 七、关键风险与应对
+
+| 风险 | 应对 |
+|------|------|
+| **后台定位被系统杀死** | 使用前台服务 + 引导用户关闭电池优化 + 请求 `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
+| **WiFi定位在国内失效** | 不依赖公共WiFi数据库；以GPS+基站为主，必要时集成百度/高德定位SDK作为补充 |
+| **轨迹漂移严重** | 使用百度鹰眼纠偏API进行去噪、绑路处理；在客户端设置精度过滤阈值（如过滤精度>100米的点） |
+| **WebSocket频繁断连** | 实现指数退避重连 + 心跳保活 + 离线缓存批量补传 |
+| **位置数据隐私** | WSS加密 + 应用层Token认证 + 好友关系校验 + 位置数据可选择性加密存储 |
+
+---
+
+这个方案的核心思路是：**利用 Android 系统的 FLP 解决“定位来源”问题，利用自建 WebSocket 服务器解决“实时传输”问题，利用时序数据库解决“轨迹存储”问题，利用百度地图 SDK 解决“可视化”问题。** 每个模块都有成熟的技术选型，整体复杂度可控，适合逐步迭代开发。

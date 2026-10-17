@@ -1,0 +1,423 @@
+下面是一份从环境配置到开发步骤的完整指南，涵盖 OpenCode + VSCode 的集成、GitHub 开源工作流、服务器部署以及百度地图 SDK 集成。
+
+---
+
+## 一、环境配置
+
+### 1.1 基础工具链
+
+| 工具 | 版本要求 | 用途 |
+|------|----------|------|
+| **JDK** | 17+（推荐 Android Studio 自带 JBR） | Kotlin 编译与 Gradle 运行 |
+| **Android Studio** | 最新稳定版 | Android 开发 IDE 与 SDK 管理 |
+| **Node.js** | 20+ | OpenCode 与服务器端开发 |
+| **Git** | 最新版 | 版本控制 |
+| **Docker**（可选） | 最新版 | 服务器端容器化部署 |
+
+OpenCode 的 Android TDD 插件会自动检测真实的 JDK，包括 Android Studio 自带的 JBR（JetBrains Runtime），**仅安装 JRE 无法编译**，需要确保 `JAVA_HOME` 指向完整的 JDK。
+
+### 1.2 安装 OpenCode
+
+```bash
+# macOS / Linux
+curl -fsSL https://opencode.ai/install | bash
+
+# Windows (PowerShell)
+irm https://opencode.ai/install.ps1 | iex
+
+# 或通过 npm
+npm install -g opencode-ai
+```
+
+安装完成后运行 `opencode --version` 验证。
+
+### 1.3 在 VSCode 中集成 OpenCode
+
+OpenCode 与 VS Code 及其常见分支（Cursor、Windsurf、VSCodium）深度集成，只需在集成终端中运行 `opencode`，扩展会自动安装。
+
+**操作步骤**：
+
+1. 打开 VSCode，进入项目根目录
+2. 打开集成终端（`` Ctrl+` ``）
+3. 运行 `opencode` — 扩展将自动安装
+4. 如果自动安装失败，确保 `code` 命令已安装：`Ctrl+Shift+P` → 搜索 “Shell Command: Install 'code' command in PATH”
+
+**核心快捷键**：
+
+| 快捷键 | 功能 |
+|--------|------|
+| `Ctrl+Esc` | 在分割终端视图中打开 OpenCode（Mac: `Cmd+Esc`） |
+| `Ctrl+Shift+Esc` | 启动新的 OpenCode 终端会话 |
+| `Alt+Ctrl+K` | 插入文件引用，如 `@File#L37-42`（Mac: `Cmd+Option+K`） |
+
+OpenCode 会自动将当前选中的代码或打开的文件作为上下文共享给它，无需手动复制粘贴。
+
+### 1.4 配置 OpenCode 项目上下文（AGENTS.md）
+
+在项目根目录创建 `AGENTS.md`，作为所有 AI Agent 的共享上下文。这是 OpenCode 发挥最大效用的关键文件：
+
+```markdown
+# RTLS Android 项目约定
+
+## 项目概述
+实时定位追踪系统，Android 端采集 FLP 位置，通过 WebSocket 上传服务器，
+服务器存储轨迹并支持双设备互查，使用百度地图展示。
+
+## 架构分层
+- `:app` — Android 客户端主模块
+- `:core:location` — FLP 定位采集（前台服务）
+- `:core:network` — WebSocket 客户端（断线重连、心跳）
+- `:core:map` — 百度地图展示（实时标记、历史轨迹）
+- `:server` — Node.js/Python WebSocket 服务器
+
+## 技术栈
+- Android: Kotlin + Jetpack Compose + Room + OkHttp
+- 服务器: Node.js (Socket.IO) 或 Python (FastAPI + websockets)
+- 数据库: TDengine (轨迹) + PostgreSQL (用户关系)
+- 地图: 百度地图 Android SDK
+- 隧道: Cloudflare Named Tunnel
+
+## 权限要求
+- ACCESS_FINE_LOCATION, ACCESS_BACKGROUND_LOCATION
+- FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION
+- INTERNET, ACCESS_NETWORK_STATE
+- POST_NOTIFICATIONS (Android 13+)
+
+## 编码规范
+- 定位算法必须有单元测试（TDD 强制）
+- UI 层使用 Compose 测试
+- WebSocket 消息使用 JSON 格式
+- 所有网络请求必须使用 WSS (TLS)
+
+## 坐标系
+- FLP 返回 WGS-84
+- 百度地图使用 BD-09
+- SDK 内部自动转换，WebView 需手动处理
+```
+
+### 1.5 安装 OpenCode Android 开发扩展
+
+**安装 Android TDD 插件**（强制测试驱动开发）：
+
+```bash
+npm install -g opencode-android-tdd
+```
+
+该插件在代码层面设置了一道“门禁”——Agent 在编写生产代码之前，必须先有一个真正失败的测试，并通过 Gradle 实际运行来验证。
+
+**安装 Android 开发 Agent 套件**：
+
+```bash
+npx opencode-agent-kit init
+```
+
+这会安装 `android-developer.md`（Kotlin/Compose 专家）、`code-reviewer.md`、`database-specialist.md` 等专用 Agent，覆盖移动端开发的完整链路。
+
+
+## 二、项目初始化
+
+### 2.1 创建 Android 项目
+
+使用 Android Studio 创建标准 Kotlin + Compose 项目：
+
+- **名称**：`RTLS`
+- **包名**：`com.yourcompany.rtls`
+- **语言**：Kotlin
+- **最低 SDK**：API 26 (Android 8.0)
+- **模板**：Empty Activity (Compose)
+
+### 2.2 初始化 Git 仓库与 GitHub 远程
+
+```bash
+cd RTLS
+git init
+git add .
+git commit -m "chore: initial Android project scaffold"
+
+# 创建 GitHub 仓库并关联
+gh repo create rtls-android --public --source=. --remote=origin --push
+```
+
+### 2.3 创建项目目录结构
+
+```
+rtls/
+├── app/                          # Android 主模块
+├── core/
+│   ├── location/                 # FLP 定位采集
+│   ├── network/                  # WebSocket 客户端
+│   ├── map/                      # 百度地图展示
+│   └── model/                    # 共享数据模型
+├── server/                       # WebSocket 服务器
+│   ├── src/
+│   │   ├── connection/           # 连接管理
+│   │   ├── router/               # 消息路由
+│   │   ├── storage/              # 数据库写入
+│   │   └── auth/                 # Token 认证
+│   ├── package.json
+│   └── Dockerfile
+├── .github/
+│   └── workflows/
+│       └── opencode.yml          # OpenCode GitHub Actions
+├── docs/
+│   └── architecture.md           # 架构文档
+├── AGENTS.md                     # OpenCode 项目上下文
+├── opencode.json                 # OpenCode 配置
+├── .gitignore
+└── README.md
+```
+
+
+## 三、GitHub 开源工作流配置
+
+### 3.1 配置 OpenCode GitHub Actions
+
+OpenCode 可以与 GitHub 工作流深度集成。在 Issue 或 PR 评论中提及 `/opencode` 或 `/oc`，OpenCode 就会在你的 GitHub Actions 运行器中执行任务。
+
+**安装方式**：在项目根目录运行 OpenCode 的 GitHub 安装命令，引导完成 GitHub App 安装、工作流创建和密钥配置。
+
+**手动配置**：创建 `.github/workflows/opencode.yml`：
+
+```yaml
+name: OpenCode Agent
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  opencode:
+    runs-on: ubuntu-latest
+    if: contains(github.event.comment.body, '/opencode') || contains(github.event.comment.body, '/oc')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opencode/agent-action@v1
+        with:
+          model: "anthropic/claude-sonnet-4-20250514"
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+**支持的触发事件**：
+
+| 事件 | 触发方式 | 用途 |
+|------|----------|------|
+| `issue_comment` | 在 Issue/PR 评论中提及 `/opencode` | 让 AI 修复 Issue 或实现功能 |
+| `pull_request_review_comment` | 在代码审查评论中提及 | 接收文件路径、行号和 diff 上下文 |
+| `issues` | Issue 创建或编辑时自动触发 | 自动分类和初步分析 |
+| `pull_request` | PR 创建或更新时触发 | 自动化代码审查 |
+| `schedule` | Cron 定时任务 | 定期维护任务 |
+
+**API 密钥配置**：在仓库 Settings → Secrets and variables → Actions 中添加所需的 API 密钥（如 `ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等）。
+
+### 3.2 配置 OpenCode 项目级设置（opencode.json）
+
+在项目根目录创建 `opencode.json`：
+
+```json
+{
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "agent": {
+    "default": "android-developer"
+  },
+  "mcp": {
+    "android": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "android_mcp_adb"]
+    }
+  },
+  "share": false
+}
+```
+
+`share` 设为 `false` 对于包含位置隐私的项目是必要的，避免会话数据被共享到公开仓库。
+
+
+## 四、详细开发步骤
+
+### 阶段一：服务器端最小可行产品（第 1-2 周）
+
+**目标**：WebSocket 服务器能接收位置、存储到数据库、转发给订阅设备。
+
+**步骤 1**：初始化服务器项目
+
+```bash
+cd server
+npm init -y
+npm install socket.io pg tdengine-client jsonwebtoken dotenv
+```
+
+**步骤 2**：使用 OpenCode 生成服务器骨架
+
+在 VSCode 中打开 OpenCode，输入：
+
+> “为 RTLS 项目创建一个 Socket.IO 服务器，支持设备 Token 认证、位置消息接收与转发、位置数据写入 PostgreSQL 和 TDengine。参考 AGENTS.md 中的架构约定。”
+
+OpenCode 会自动读取 `AGENTS.md` 作为上下文，生成符合项目约定的代码。
+
+**步骤 3**：实现核心消息协议
+
+参考之前方案中的 JSON 消息格式（`location_update`、`location_push`、`query_location`、`query_history`），让 OpenCode 生成对应的 TypeScript 类型定义和路由处理逻辑。
+
+**步骤 4**：编写测试
+
+使用 OpenCode 的 TDD 工作流，先编写失败的测试，再实现功能：
+
+> “用 TDD 方式实现位置消息的路由逻辑。先写测试：当设备 A 发送 location_update 时，订阅了 A 的设备 B 应收到 location_push。”
+
+### 阶段二：Android 定位采集模块（第 2-3 周）
+
+**目标**：App 能在前台服务中持续获取 FLP 位置并通过 WebSocket 上传。
+
+**步骤 1**：添加依赖
+
+```kotlin
+// app/build.gradle.kts
+dependencies {
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.room:room-runtime:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+}
+```
+
+**步骤 2**：实现 FLP 定位前台服务
+
+使用 OpenCode 生成 `LocationForegroundService`：
+
+> “创建一个 foregroundServiceType=location 的前台服务，使用 FusedLocationProviderClient 请求 PRIORITY_HIGH_ACCURACY 定位，每 5 秒更新一次，通过 OkHttp WebSocket 发送到服务器。”
+
+**关键实现要点**：
+
+- 使用 `LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000L)` 设置高精度优先
+- 设置 `setMaxUpdateDelayMillis(10000L)` 允许批量延迟上传，平衡电量
+- Android 14+ 需要声明 `FOREGROUND_SERVICE_LOCATION` 权限
+
+**步骤 3**：实现 WebSocket 客户端与断线重连
+
+使用 OpenCode 生成带指数退避重连的 WebSocket 客户端：
+
+> “实现 OkHttp WebSocket 客户端，断线后使用指数退避重连（2s, 4s, 8s...），每 30 秒发送 PING 心跳。”
+
+**步骤 4**：实现离线缓存
+
+使用 Room 将网络不可用时的位置暂存到本地 SQLite，网络恢复后批量补传。
+
+### 阶段三：百度地图展示模块（第 3-4 周）
+
+**目标**：地图上实时显示自己和好友的位置，支持历史轨迹查看。
+
+**步骤 1**：集成百度地图 SDK
+
+1. 前往百度地图开放平台（`lbsyun.baidu.com`）注册开发者账号，创建应用，获取 Android SDK 的 **API Key（AK）**，AK 需绑定应用的 SHA1 签名证书指纹与包名。
+
+2. 下载 SDK 并导入项目，在 `AndroidManifest.xml` 中配置 AK 和所需权限：
+
+```xml
+<application>
+    <meta-data
+        android:name="com.baidu.lbsapi.API_KEY"
+        android:value="你的AK" />
+</application>
+
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+```
+
+3. 在 `Application` 的 `onCreate` 中初始化 SDK：
+
+```kotlin
+class RtlsApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        SDKInitializer.initialize(this)
+        SDKInitializer.setCoordType(CoordType.BD09LL)
+    }
+}
+```
+
+**步骤 2**：实现实时位置标记
+
+> “在地图上为每个好友创建一个 Marker，WebSocket 收到 location_push 后平滑移动 Marker 到新坐标。”
+
+**步骤 3**：实现历史轨迹绘制
+
+**关键优化**：应只初始化一次 `Polyline`，通过 `setPath()` 动态更新路径，频繁新建 Polyline 会导致 GPU 资源泄漏。
+
+> “查询历史轨迹后，使用 Polyline 绘制轨迹线。只创建一个 Polyline 实例，通过 setPath() 更新路径。”
+
+**步骤 4**：坐标系处理
+
+FLP 返回 WGS-84 坐标，百度地图使用 BD-09 坐标。使用百度地图 SDK 时，SDK 内部会自动处理转换；如果使用 WebView 渲染，需要手动引入坐标转换库或调用百度坐标转换 API。
+
+### 阶段四：安全加固与部署（第 4-5 周）
+
+**步骤 1**：服务器绑定本地回环
+
+```python
+# Python 示例
+server.bind(('127.0.0.1', 9099))  # 只监听本地，不对外暴露
+```
+
+**步骤 2**：配置 Cloudflare Named Tunnel
+
+1. 在 Cloudflare Dashboard 中，前往 **Networking → Tunnels**
+2. 选择 **Create Tunnel**，输入隧道名称（如 `rtls-websocket`）
+3. 选择服务器操作系统，复制安装命令并在服务器上运行
+4. 隧道连接成功后，状态会显示为 `Healthy`
+5. 添加 **Published Application** 路由，将公网域名（如 `rtls.yourdomain.com`）映射到本地 `http://127.0.0.1:9099`
+
+**前置条件**：需要一个 Cloudflare 账户和一个托管在 Cloudflare 的域名。
+
+**步骤 3**：Android 端使用 WSS 连接
+
+将 WebSocket 地址从 `ws://` 改为 `wss://rtls.yourdomain.com`，并在 OkHttp 中配置 TLS。
+
+**步骤 4**：Token 认证
+
+在服务器端生成 JWT Token，Android 端在 WebSocket 连接时通过 Header 或 Query 参数携带 Token。服务器验证后才允许建立连接。
+
+### 阶段五：测试与优化（第 5-6 周）
+
+- **电量优化**：使用 `setMaxUpdateDelayMillis` 批量上传，减少网络请求频率
+- **轨迹纠偏**：调用百度鹰眼 API 对历史轨迹进行去噪和绑路处理
+- **性能测试**：使用 `nmap` 验证 Cloudflare Tunnel 配置后服务器无暴露端口
+- **双设备联调**：两台手机互相查询位置，验证实时性和准确性
+
+
+## 五、使用 OpenCode 的核心技巧
+
+### 5.1 在 VSCode 中的高效工作流
+
+1. **打开 OpenCode**：`Ctrl+Esc` 在分割终端中打开
+2. **选中代码后提问**：选中一段 Kotlin 代码，直接输入 “这段代码有什么问题？” OpenCode 会自动读取选中内容作为上下文
+3. **引用文件**：使用 `Alt+Ctrl+K` 插入文件引用，如 `@LocationService.kt#L45-60`
+4. **新建会话**：`Ctrl+Shift+Esc` 为不同任务开启独立会话
+
+### 5.2 利用 GitHub Actions 自动化
+
+在 PR 中评论 `/opencode 请审查这段 WebSocket 重连逻辑`，OpenCode 会在 GitHub Actions 运行器中分析代码并回复审查意见。它可以在新分支中工作并提交包含变更的 PR，整个流程在你的 GitHub 运行器中安全执行。
+
+### 5.3 使用 TDD 插件保证定位算法正确性
+
+定位计算（如精度过滤、坐标转换）对正确性要求极高。使用 `opencode-android-tdd` 插件后，每次让 OpenCode 编写定位相关代码时，它会**强制先编写失败的测试**，通过 Gradle 实际运行验证失败后，才允许编写生产代码。
+
+
+## 六、关键风险与应对
+
+| 风险 | 应对措施 |
+|------|----------|
+| **后台定位被系统杀死** | 前台服务 + 引导用户关闭电池优化 + `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
+| **WiFi 定位在国内失效** | 不依赖公共 WiFi 数据库，以 GPS + 基站为主 |
+| **轨迹漂移** | 百度鹰眼纠偏 API + 客户端精度过滤（过滤精度 > 100m 的点） |
+| **WebSocket 断连** | 指数退避重连 + 心跳保活 + Room 离线缓存批量补传 |
+| **位置隐私** | WSS 加密 + JWT Token 认证 + 好友关系校验 |
+| **Cloudflare 依赖** | 隧道故障时，Android 端自动切换备用连接地址（如直连 IP） |
+| **百度地图 AK 泄露** | AK 绑定 SHA1 和包名，定期轮换 |
