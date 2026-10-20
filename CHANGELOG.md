@@ -29,6 +29,14 @@
 - 文档门禁：`scripts/check-links.py` 检查全库相对链接，`scripts/check-changelog.py` 在 PR 中要求非文档改动同步更新本文件。
 - 安全流水线：生产依赖审计（high 及以上失败）、CodeQL（PR + `master` + 每周）、Dependabot（npm 与 Actions 每周分组升级）。
 - `master` 分支 Ruleset：禁止删除/强推、线性历史、必需状态检查（`server (22)`、`server (24)`、`docs`、`security`）、分支必须最新；同时开启 Actions SHA 固定校验与 Dependabot 安全更新。
+- Android 多模块 Gradle 工程（`:app`、`:core:model`、`:core:network`、`:core:location`、`:core:data`、`:core:map`）：Kotlin 2.0.21、AGP 8.7.3、Compose BOM 2024.12.01、Room 2.6.1/KSP、OkHttp 4.12；compileSdk/targetSdk 35、minSdk 26、JDK 17。
+- `:core:model`：WGS-84/GCJ-02/BD-09 坐标转换、`GeoPoint`/`LocationSample`/`GeoMath`；WGS-84 为唯一传输坐标，样本保留 `sourceCrs` 供审计。
+- `:core:network`：协议信封与消息、4 KB 帧限制、1s→60s ±20% 重连退避、Bearer WebSocket 客户端（30s ping、断线重订阅、4401 不重试）。
+- `:core:location`：`LocationSource` 抽象、GMS FLP → `LocationManager` → Debug Fake 回退、前台定位服务与通知渠道。
+- `:core:data`：Room 离线队列（1000 条 / 24 小时、去重）、加密 TokenStore、DataStore 偏好。
+- `:core:map`：地图渲染契约与 WGS-84 → BD-09 渲染坐标转换。
+- `:app`：Compose 单 Activity 空壳、权限引导（前台/通知/后台）、地图/好友/设置三页、debug/release WebSocket 地址。
+- Android CI workflow：JDK 17 + SDK 35 + Gradle 缓存，执行 `assembleDebug` / `testDebugUnitTest` / `lintDebug`。
 
 #### 变更
 
@@ -54,3 +62,9 @@
 - 错误响应为 Fastify 默认结构，不符合协议信封；统一为 `{error:{code,message,requestId}}`，并生成 `req_*` 请求 ID。
 - 文档示例使用 `?1`/`?2` 编号参数且重复引用，better-sqlite3 无法这样绑定；改为 `?` 位置参数或命名参数。
 - Dependabot PR 被 `CHANGELOG` 门禁误拦；门禁对 `dependabot[bot]` 豁免。Dependency Review 在该仓库不可用，移除该步骤，依赖风险由 `npm audit` 与 Dependabot 覆盖。
+- `.gitignore` 的 `data/` 规则误忽略 `core/data` 模块；改为仅忽略根目录 `/data/`，确保 Room 队列源码与 schema 进入版本控制。
+- 权限引导页“打开设置”同时直接调用系统设置和回调，导致重复启动设置页；改为只调用一次回调。
+- 未获取定位时，地图预览仍显示固定的 WGS-84/BD-09 占位坐标；改为显示“等待定位…”，避免误认为已定位。
+- 仅授予模糊定位时，`LocationManager` 回退仍可能请求 GPS provider 并失败；现在按 fine/coarse 权限选择 GPS 或网络 provider。
+- 系统定位开关关闭但 Google Play Services 可用时仍会选择 FLP，表现为“共享中”但无位置；GMS 源现在检查系统定位开关，关闭时回退或明确报错。
+- 共享运行中切换“模拟定位”只更新偏好、不重启定位源；现在切换后立即用新定位源重启共享。

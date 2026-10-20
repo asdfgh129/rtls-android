@@ -149,14 +149,14 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 |---|---|
 | 分支 | `master`（受保护）+ `feat/*`、`fix/*`、`chore/*` |
 | PR | CI 全绿才能合并；至少 1 个 review（单人阶段为 0，有协作者后调整为 1） |
-| CI | server：typecheck / test / build（Node 22、24）+ 迁移 `up → down → up`；docs：相对链接 + `CHANGELOG` 门禁（Dependabot PR 豁免）；security：`npm audit --omit=dev`、Dependabot 告警与安全更新；CodeQL 每周与 PR 扫描 |
+| CI | server：typecheck / test / build（Node 22、24）+ 迁移 `up → down → up`；android：`assembleDebug` / `testDebugUnitTest` / `lintDebug`（JDK 17、SDK 35）；docs：相对链接 + `CHANGELOG` 门禁（Dependabot PR 豁免）；security：`npm audit --omit=dev`、Dependabot 告警与安全更新；CodeQL 每周与 PR 扫描 |
 | Action | 第三方 Action 固定到 commit SHA，不用浮动 tag（已开启 `sha_pinning_required`） |
 | 变更日志 | 当天改动记入根目录 [`CHANGELOG.md`](../../CHANGELOG.md) 的 `[Unreleased]`，与代码同一提交 |
 | DoD | 见 [`roadmap.md`](../planning/roadmap.md) §11 |
 
-`master` 由仓库 Ruleset 保护：禁止删除与强推、要求线性历史、要求状态检查（`server (22)`、`server (24)`、`docs`、`security`）通过、分支必须最新。直接 push 会被拒绝，改动一律走 PR。
+`master` 由仓库 Ruleset 保护：禁止删除与强推、要求线性历史、要求状态检查（`server (22)`、`server (24)`、`docs`、`security`）通过、分支必须最新。直接 push 会被拒绝，改动一律走 PR。Android workflow 已加入，需在 Ruleset 中将 `android` 设为必需检查。
 
-Android 工程落地后再新增 `android.yml`（JDK 21 + Gradle 缓存 + `testDebugUnitTest` / `lintDebug` / `assembleDebug`），在此之前 CI 只覆盖 `server/` 与文档。
+Android CI 由 `.github/workflows/android.yml` 覆盖：JDK 17 + Android SDK 35 + Gradle 缓存，执行 `assembleDebug` / `testDebugUnitTest` / `lintDebug`。
 
 禁止给 AI Agent 的 `issue_comment` 工作流 `contents: write` 权限（公开仓库风险）。
 

@@ -17,10 +17,24 @@ coverage/
 
 # 本地 SQLite 数据库（含 WAL/SHM）
 server/data/
-data/
+/data/
 *.db
 *.db-wal
 *.db-shm
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+*.hprof
+captures/
+.externalNativeBuild/
+.cxx/
+.kotlin/
+*.keystore
+!debug.keystore

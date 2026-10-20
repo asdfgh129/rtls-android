@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RTLS</string>
+    <string name="app_tagline">与好友实时共享位置</string>
+
+    <string name="nav_map">地图</string>
+    <string name="nav_friends">好友</string>
+    <string name="nav_settings">设置</string>
+
+    <string name="permission_title">开启定位，开始共享</string>
+    <string name="permission_description">RTLS 需要前台定位权限来采集你的位置，并通过通知常驻服务保证持续共享。位置只会分享给你授权的好友。</string>
+    <string name="permission_grant">授予定位权限</string>
+    <string name="permission_denied">定位权限被拒绝，无法开始共享。你可以随时在系统设置中重新授予。</string>
+    <string name="permission_notifications">通知权限用于显示定位服务状态。</string>
+    <string name="permission_background_title">后台定位（可选）</string>
+    <string name="permission_background_description">如果需要在 App 不可见时继续共享，请到系统设置选择“始终允许”。仅在使用时定位也可正常工作。</string>
+    <string name="permission_open_settings">打开系统设置</string>
+
+    <string name="tracking_start">开始共享</string>
+    <string name="tracking_stop">停止共享</string>
+    <string name="tracking_running">正在共享位置</string>
+    <string name="tracking_stopped">未在共享</string>
+    <string name="tracking_fake">模拟位置（仅 Debug）</string>
+    <string name="tracking_source">定位源</string>
+    <string name="tracking_last_update">最近更新</string>
+    <string name="tracking_never">尚未获取到位置</string>
+
+    <string name="map_placeholder_title">地图渲染占位</string>
+    <string name="map_placeholder_description">Phase 0 不接入百度地图 SDK。此处展示 WGS-84 → BD-09 转换后的坐标与占位视图。</string>
+    <string name="map_bd09">BD-09</string>
+    <string name="map_wgs84">WGS-84</string>
+
+    <string name="friends_empty_title">还没有好友</string>
+    <string name="friends_empty_description">好友功能将在 Phase 2 接入。届时可通过好友码互相添加并实时查看位置。</string>
+
+    <string name="settings_title">设置</string>
+    <string name="settings_server">服务端</string>
+    <string name="settings_account">账号</string>
+    <string name="settings_account_value">未登录（Phase 1 接入邀请码注册）</string>
+    <string name="settings_queue">离线队列</string>
+    <string name="settings_queue_value">本地最多缓存 1,000 条 / 24 小时</string>
+    <string name="settings_privacy">隐私</string>
+    <string name="settings_privacy_value">位置仅上传给你授权的好友可见</string>
+    <string name="settings_build">构建</string>
+    <string name="settings_version">版本</string>
+
+    <string name="notification_channel_name">位置共享</string>
+    <string name="notification_channel_description">共享位置时显示的常驻通知</string>
+    <string name="notification_title">RTLS 正在共享位置</string>
+    <string name="notification_text">点击返回应用，或使用下方按钮停止共享</string>
+    <string name="notification_stop">停止共享</string>
+
+    <string name="error_location_permission">缺少定位权限，无法启动定位服务</string>
+    <string name="error_no_location_source">当前设备没有可用的定位源</string>
+    <string name="error_service_start">定位服务启动失败</string>
+</resources>

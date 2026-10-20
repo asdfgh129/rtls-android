@@ -1,0 +1,131 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "c0072d1e31bff8256759a84d8b1717c1",
+    "entities": [
+      {
+        "tableName": "location_queue",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`client_msg_id` TEXT NOT NULL, `device_id` TEXT, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `source_crs` TEXT NOT NULL, `accuracy_meters` REAL NOT NULL, `provider` TEXT NOT NULL, `timestamp_ms` INTEGER NOT NULL, `speed_mps` REAL, `bearing_degrees` REAL, `is_mock` INTEGER NOT NULL, `battery_level` REAL, `enqueued_at_ms` INTEGER NOT NULL, `attempt_count` INTEGER NOT NULL, PRIMARY KEY(`client_msg_id`))",
+        "fields": [
+          {
+            "fieldPath": "clientMsgId",
+            "columnName": "client_msg_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "latitude",
+            "columnName": "latitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "longitude",
+            "columnName": "longitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceCrs",
+            "columnName": "source_crs",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accuracyMeters",
+            "columnName": "accuracy_meters",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampMs",
+            "columnName": "timestamp_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speedMps",
+            "columnName": "speed_mps",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "bearingDegrees",
+            "columnName": "bearing_degrees",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isMock",
+            "columnName": "is_mock",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryLevel",
+            "columnName": "battery_level",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "enqueuedAtMs",
+            "columnName": "enqueued_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attempt_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "client_msg_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_location_queue_enqueued_at_ms",
+            "unique": false,
+            "columnNames": [
+              "enqueued_at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_location_queue_enqueued_at_ms` ON `${TABLE_NAME}` (`enqueued_at_ms`)"
+          },
+          {
+            "name": "index_location_queue_timestamp_ms",
+            "unique": false,
+            "columnNames": [
+              "timestamp_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_location_queue_timestamp_ms` ON `${TABLE_NAME}` (`timestamp_ms`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c0072d1e31bff8256759a84d8b1717c1')"
+    ]
+  }
+}
