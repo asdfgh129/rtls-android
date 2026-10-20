@@ -35,7 +35,7 @@
 | P0-04 | 协议 schema 与契约测试 | Server | 1d | P0-01 | Todo |
 | P0-05 | 数据库迁移与 Repository | Server | 1d | P0-02 | Todo |
 | P0-06 | 服务端空壳 | Server | 0.5d | P0-02/03/05 | Todo |
-| P0-07 | Android 空壳 | Android | 1d | P0-02 | Todo |
+| P0-07 | Android 空壳 | Android | 1d | P0-02 | Done |
 | P0-08 | CI 与分支保护 | DevOps | 0.5d | P0-02 | Done |
 | P0-09 | 风险 spike | Android + Server | 1.5d | P0-03/07 | Todo |
 | P0-10 | AGENTS.md 更新 | Tech lead | 0.5d | P0-01~09 | Todo |
@@ -339,6 +339,13 @@ wscat -c ws://127.0.0.1:9099/v1/ws
 - 权限拒绝不崩溃；
 - `GeoPoint` 测试通过。
 
+**验证记录（2026-10-20）**
+
+- `./gradlew :app:assembleDebug` 通过，生成 `app/build/outputs/apk/debug/app-debug.apk`；
+- `./gradlew test` 通过；
+- `./gradlew :app:lintDebug` 通过（0 errors / 32 warnings）；
+- API 35 x86_64 模拟器：首次启动展示权限引导；授予前台定位与通知后，前台服务运行并显示常驻通知；Debug 模拟定位产生样本；停止共享后服务退出；好友/设置页可切换；撤销权限后重启不崩溃并回到引导页。
+
 ---
 
 ### P0-08：CI 与分支保护
@@ -357,7 +364,7 @@ wscat -c ws://127.0.0.1:9099/v1/ws
 - `scripts/check-links.py`、`scripts/check-changelog.py`：文档链接与变更日志门禁。
 - 密钥扫描使用 GitHub 原生 Secret Scanning + Push Protection（已启用），不再引入 gitleaks Action。
 - 分支保护 Ruleset：禁止删除/强推、线性历史、必需状态检查、分支必须最新；单人阶段 review 数为 0。
-- `.github/workflows/android.yml` 延后到 Android 工程落地（P0-07）后补充。
+- `.github/workflows/android.yml`：JDK 17 + Android SDK 35 + Gradle 缓存，执行 `assembleDebug` / `testDebugUnitTest` / `lintDebug`。
 
 **验收**
 
