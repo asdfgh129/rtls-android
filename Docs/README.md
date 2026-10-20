@@ -110,12 +110,13 @@ RTLS（Real-Time Location Sharing）是一个 Android 采集 → 服务端中转
 - 正式文档（`architecture/overview.md`、`guides/development.md`、`guides/deployment.md`），初始文档已归档；
 - 文档按类型目录整理（`architecture/`、`specs/`、`guides/`、`planning/`、`reviews/`、`archive/`）；
 - `server/` 骨架：Fastify + `/healthz`、SQLite 迁移（dbmate）、Repository 层、Vitest 测试；
+- CI（GitHub Actions）：server 双 Node 版本、迁移回归、文档链接与 `CHANGELOG` 门禁、依赖审计、CodeQL、Dependabot，`master` 分支保护；
 - 变更日志（`CHANGELOG.md`，按日更新）。
 
 待完成：
 
 - Android 空壳；
-- CI；
+- Android CI（随 Android 工程一起补齐）；
 - 风险 spike；
 - `AGENTS.md` 更新；
 - ADR-010（批量补传与配额、注册错误码取舍、注销删除接口）。

@@ -347,25 +347,23 @@ wscat -c ws://127.0.0.1:9099/v1/ws
 
 **产出**
 
-- `.github/workflows/server.yml`：
-  - Node 24（最低 22）
-  - `npm ci`
-  - lint / typecheck / test / build
-  - 测试使用临时文件数据库（无需 DB service / Testcontainers）
-- `.github/workflows/android.yml`：
-  - JDK 17
-  - `./gradlew testDebugUnitTest lint`
-  - 缓存 Gradle
-- `.github/workflows/security.yml`：
-  - secret scan（gitleaks）
-  - 依赖审计（`npm audit --omit=dev`，允许已知例外）
-- 分支保护：至少 1 个 review，CI 全绿才能合并。
+- `.github/workflows/ci.yml`：
+  - server：Node 22 / 24 矩阵，`npm ci` → `typecheck` → `test` → `build`；Node 24 额外执行迁移 `up → down → up` 并校验 `integrity_check` 和 `auto_vacuum`；
+  - docs：Markdown 相对链接检查、PR 的 `CHANGELOG.md` 门禁；
+  - security：`npm audit --omit=dev --audit-level=high`、PR 的 Dependency Review；
+  - 测试使用临时文件数据库（无需 DB service / Testcontainers）。
+- `.github/workflows/codeql.yml`：JavaScript/TypeScript 静态扫描，PR、`master` push 与每周一运行。
+- `.github/dependabot.yml`：npm（`server/`）与 GitHub Actions 每周分组升级。
+- `scripts/check-links.py`、`scripts/check-changelog.py`：文档链接与变更日志门禁。
+- 密钥扫描使用 GitHub 原生 Secret Scanning + Push Protection（已启用），不再引入 gitleaks Action。
+- 分支保护 Ruleset：禁止删除/强推、线性历史、必需状态检查、分支必须最新；单人阶段 review 数为 0。
+- `.github/workflows/android.yml` 延后到 Android 工程落地（P0-07）后补充。
 
 **验收**
 
-- 新建 PR 后两个 workflow 都运行；
-- 故意提交一个 lint 错误，CI 变红；
-- 修复后 CI 变绿。
+- 新建 PR 后 `server (22)`、`server (24)`、`docs`、`security` 全部运行；
+- 故意提交一个类型错误或失效链接，CI 变红；
+- 修复后 CI 变绿，且 `master` 直接 push 被拒绝。
 
 **注意**
 

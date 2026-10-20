@@ -147,12 +147,16 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 
 | 项 | 约定 |
 |---|---|
-| 分支 | `main` + `feat/*`、`fix/*`、`chore/*` |
-| PR | 至少 1 个 review；CI 全绿才能合并 |
-| CI | server：lint / typecheck / test / build；Android：`testDebugUnitTest` + `lintDebug`；security：secret scan + 依赖审计 |
-| Action | 第三方 Action 固定到 commit SHA，不用浮动 tag |
+| 分支 | `master`（受保护）+ `feat/*`、`fix/*`、`chore/*` |
+| PR | CI 全绿才能合并；至少 1 个 review（单人阶段为 0，有协作者后调整为 1） |
+| CI | server：typecheck / test / build（Node 22、24）+ 迁移 `up → down → up`；docs：相对链接 + `CHANGELOG` 门禁；security：`npm audit --omit=dev` + Dependency Review；CodeQL 每周与 PR 扫描 |
+| Action | 第三方 Action 固定到 commit SHA，不用浮动 tag（已开启 `sha_pinning_required`） |
 | 变更日志 | 当天改动记入根目录 [`CHANGELOG.md`](../../CHANGELOG.md) 的 `[Unreleased]`，与代码同一提交 |
 | DoD | 见 [`roadmap.md`](../planning/roadmap.md) §11 |
+
+`master` 由仓库 Ruleset 保护：禁止删除与强推、要求线性历史、要求状态检查（`server (22)`、`server (24)`、`docs`、`security`）通过、分支必须最新。直接 push 会被拒绝，改动一律走 PR。
+
+Android 工程落地后再新增 `android.yml`（JDK 21 + Gradle 缓存 + `testDebugUnitTest` / `lintDebug` / `assembleDebug`），在此之前 CI 只覆盖 `server/` 与文档。
 
 禁止给 AI Agent 的 `issue_comment` 工作流 `contents: write` 权限（公开仓库风险）。
 

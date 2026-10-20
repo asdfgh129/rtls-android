@@ -25,6 +25,10 @@
 - 根目录 `Makefile`（`install`/`migrate`/`migrate-down`/`migrate-status`/`db-reset`/`db-shell`/`test`/`build`/`typecheck`）与 `.env.example`。
 - 本变更日志，建立每日记录约定。
 - `ADR-009`《SQLite 单文件存储》，取代 `ADR-003`。
+- GitHub Actions CI：`server (22)` / `server (24)` 跑 typecheck、34 项测试与 build，Node 24 额外执行迁移 `up → down → up` 并校验 `integrity_check`、`auto_vacuum`。
+- 文档门禁：`scripts/check-links.py` 检查全库相对链接，`scripts/check-changelog.py` 在 PR 中要求非文档改动同步更新本文件。
+- 安全流水线：生产依赖审计（high 及以上失败）、PR Dependency Review、CodeQL（PR + `master` + 每周）、Dependabot（npm 与 Actions 每周分组升级）。
+- `master` 分支 Ruleset：禁止删除/强推、线性历史、必需状态检查（`server (22)`、`server (24)`、`docs`、`security`）、分支必须最新；同时开启 Actions SHA 固定校验与 Dependabot 安全更新。
 
 #### 变更
 
@@ -33,6 +37,7 @@
 - 文档体系同步 SQLite：`ADR-001`、`ADR-008`、`overview.md`、`guides/development.md`、`guides/deployment.md`、`planning/roadmap.md`、`planning/phase-0-tasks.md`。
 - `ADR-003` 标记为 Superseded，`decisions/README.md` 索引与文档地图同步。
 - 依赖基线更新为 `better-sqlite3` 13.x、`dbmate` 2.x。
+- 分支模型统一为 `master`（原文档写 `main`），`feat/*`、`fix/*`、`chore/*` 保持不变；`guides/development.md` 与 `phase-0-tasks.md` 同步。
 
 #### 移除
 
