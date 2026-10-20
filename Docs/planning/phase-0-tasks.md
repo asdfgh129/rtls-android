@@ -350,7 +350,7 @@ wscat -c ws://127.0.0.1:9099/v1/ws
 - `.github/workflows/ci.yml`：
   - server：Node 22 / 24 矩阵，`npm ci` → `typecheck` → `test` → `build`；Node 24 额外执行迁移 `up → down → up` 并校验 `integrity_check` 和 `auto_vacuum`；
   - docs：Markdown 相对链接检查、PR 的 `CHANGELOG.md` 门禁；
-  - security：`npm audit --omit=dev --audit-level=high`、PR 的 Dependency Review；
+  - security：`npm audit --omit=dev --audit-level=high`、Dependabot 告警与安全更新；
   - 测试使用临时文件数据库（无需 DB service / Testcontainers）。
 - `.github/workflows/codeql.yml`：JavaScript/TypeScript 静态扫描，PR、`master` push 与每周一运行。
 - `.github/dependabot.yml`：npm（`server/`）与 GitHub Actions 每周分组升级。

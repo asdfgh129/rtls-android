@@ -5,6 +5,10 @@ import sys
 
 
 def main() -> int:
+    if os.environ.get('ACTOR') == 'dependabot[bot]':
+        print('dependabot PR, skipping changelog gate')
+        return 0
+
     base = os.environ.get('BASE_REF')
     if not base:
         print('BASE_REF is not set, skipping')
