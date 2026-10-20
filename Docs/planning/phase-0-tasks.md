@@ -36,7 +36,7 @@
 | P0-05 | 数据库迁移与 Repository | Server | 1d | P0-02 | Todo |
 | P0-06 | 服务端空壳 | Server | 0.5d | P0-02/03/05 | Todo |
 | P0-07 | Android 空壳 | Android | 1d | P0-02 | Todo |
-| P0-08 | CI 与分支保护 | DevOps | 0.5d | P0-02 | Todo |
+| P0-08 | CI 与分支保护 | DevOps | 0.5d | P0-02 | Done |
 | P0-09 | 风险 spike | Android + Server | 1.5d | P0-03/07 | Todo |
 | P0-10 | AGENTS.md 更新 | Tech lead | 0.5d | P0-01~09 | Todo |
 | P0-11 | Phase 1 就绪评审 | 全员 | 0.5d | 全部 | Todo |
