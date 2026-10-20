@@ -149,7 +149,7 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 |---|---|
 | 分支 | `master`（受保护）+ `feat/*`、`fix/*`、`chore/*` |
 | PR | CI 全绿才能合并；至少 1 个 review（单人阶段为 0，有协作者后调整为 1） |
-| CI | server：typecheck / test / build（Node 22、24）+ 迁移 `up → down → up`；docs：相对链接 + `CHANGELOG` 门禁；security：`npm audit --omit=dev` + Dependency Review；CodeQL 每周与 PR 扫描 |
+| CI | server：typecheck / test / build（Node 22、24）+ 迁移 `up → down → up`；docs：相对链接 + `CHANGELOG` 门禁（Dependabot PR 豁免）；security：`npm audit --omit=dev`、Dependabot 告警与安全更新；CodeQL 每周与 PR 扫描 |
 | Action | 第三方 Action 固定到 commit SHA，不用浮动 tag（已开启 `sha_pinning_required`） |
 | 变更日志 | 当天改动记入根目录 [`CHANGELOG.md`](../../CHANGELOG.md) 的 `[Unreleased]`，与代码同一提交 |
 | DoD | 见 [`roadmap.md`](../planning/roadmap.md) §11 |
