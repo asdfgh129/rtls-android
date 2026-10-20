@@ -1,6 +1,8 @@
 # ADR-003：MVP 存储方案
 
-- 状态：Accepted
+> **本 ADR 已被 [ADR-009](./ADR-009-sqlite-storage.md) 取代。** 以下内容仅作历史记录，不再作为实现依据；现行存储方案见 ADR-009。
+
+- 状态：Superseded（由 [ADR-009](./ADR-009-sqlite-storage.md) 取代）
 - 日期：2026-10-19
 - 关联：[初始方案（归档）](../../archive/plan-2026-10-17.md) 四、[初始步骤（归档）](../../archive/step-2026-10-17.md) 阶段一；详细 DDL 见 [`../data-model.md`](../../specs/data-model.md)
 

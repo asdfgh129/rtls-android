@@ -4,7 +4,7 @@
 - 日期：2026-10-19
 - 目标：在写业务功能前，把决策、契约、数据库、工程骨架、CI 和关键风险验证全部落地
 - 预计：3~5 个工作日（2 人并行）
-- 前置：ADR-001 ~ ADR-008 已确认
+- 前置：ADR-001 ~ ADR-009 已确认
 
 > Phase 0 的完成标准不是“代码能跑”，而是 **Phase 1 可以在没有架构歧义的情况下直接开工**。
 
@@ -14,9 +14,9 @@
 
 全部满足才进入 Phase 1：
 
-- [ ] ADR-001 ~ ADR-008 状态为 Accepted；`Plan.md`/`Step.md` 已归档为 `Docs/archive/`，正式文档（`architecture/overview.md` / `guides/development.md` / `guides/deployment.md`）就位。
+- [ ] ADR-001 ~ ADR-009 状态为 Accepted（ADR-003 已由 ADR-009 取代）；`Plan.md`/`Step.md` 已归档为 `Docs/archive/`，正式文档（`architecture/overview.md` / `guides/development.md` / `guides/deployment.md`）就位。
 - [ ] `Docs/specs/protocol.md` 与 `Docs/specs/data-model.md` 可被客户端/服务端同时引用。
-- [ ] 空库可一键迁移，`up → down → up` 通过。
+- [ ] 空库可一键迁移，`up → down → up` 通过，且 `PRAGMA integrity_check = ok`。
 - [ ] `server/` 可启动，`GET /healthz` 返回 200。
 - [ ] Android 工程可编译，空壳 App 可启动，权限流程可展示。
 - [ ] CI 对 server 与 Android 都执行 lint/test/build。
@@ -53,7 +53,7 @@
 
 **产出**
 
-- 团队确认 `Docs/architecture/decisions/ADR-001` ~ `ADR-008` 的 Accepted 状态（有异议则记录并新增 ADR）。
+- 团队确认 `Docs/architecture/decisions/ADR-001` ~ `ADR-009` 的 Accepted 状态（ADR-003 已由 ADR-009 取代；有异议则记录并新增 ADR）。
 - 初始方案与实施步骤已归档为 `Docs/archive/plan-2026-10-17.md`、`Docs/archive/step-2026-10-17.md`，并转为 `architecture/overview.md` / `guides/development.md` / `guides/deployment.md`；后续只需维护新文档。
 - 列出仍存在的冲突及处理方式；不允许“以后再说”。
 
@@ -139,44 +139,59 @@ cd server && npm ci && npm run build
 
 ### P0-03：本地开发环境
 
-**目标**：一条命令启动 PostgreSQL 与 API 依赖。
+**目标**：一条命令准备本地 SQLite 数据目录并完成迁移。
 
 **产出**
 
+- `server/data/` 目录（本地 SQLite 文件，加入 `.gitignore`）。
 - `docker-compose.yml`：
-  - `postgres:16`
   - `api`（可选，Phase 1 再启用）
-  - 网络与卷
+  - 绑定 `./data` 卷
+  - 网络
 - `.env.example`：
 
 ```dotenv
 NODE_ENV=development
 PORT=9099
-DATABASE_URL=postgres://rtls:rtls@127.0.0.1:5432/rtls
+DATABASE_PATH=./server/data/rtls.db
 JWT_SECRET=change-me-at-least-32-bytes
 LOCATION_RETENTION_DAYS=90
 PUBLIC_BASE_URL=http://127.0.0.1:9099
 ```
 
-- `Makefile` 或 npm scripts：
+- `Makefile` 或 npm scripts（`make migrate` 是 dbmate 的薄封装）：
 
 ```bash
-make dev-up
-make dev-down
-make migrate
+make migrate     # mkdir -p server/data && dbmate --url "sqlite:$DATABASE_PATH" up
+make db-reset     # dbmate drop && dbmate up（仅本地）
+make db-shell     # sqlite3 "$DATABASE_PATH"
 make test
+```
+
+- `server/package.json` 脚本：
+
+```json
+{
+  "scripts": {
+    "migrate": "dbmate --migrations-dir migrations --url \"sqlite:$DATABASE_PATH\""
+  }
+}
 ```
 
 **验收**
 
 ```bash
-docker compose up -d postgres
-psql "$DATABASE_URL" -c 'select version();'
+mkdir -p server/data
+make migrate
+sqlite3 "$DATABASE_PATH" 'select sqlite_version();'
+cd server && npm run migrate status
 ```
 
 **注意**
 
-- PostgreSQL 不映射 `0.0.0.0:5432`，只映射 `127.0.0.1:5432`。
+- `DATABASE_PATH` 必须显式导出，或由 `server/src/config.ts` 读取 `.env` 后传入；Makefile 不自动加载 `.env`。
+- SQLite 文件权限 `0600`、目录 `0700`；禁止放在 NFS/SMB。
+- 只允许一个 API 进程访问数据库文件（ADR-009）。
 - `.env` 不提交；`.env.example` 可以提交。
 
 ---
@@ -217,24 +232,30 @@ cd server && npm test -- protocol
 
 ### P0-05：数据库迁移与 Repository
 
-**目标**：`Docs/specs/data-model.md` 可在空库落地。
+**目标**：`Docs/specs/data-model.md` 可在空库（SQLite 文件）落地。
 
 **产出**
 
-- `server/migrations/001_extensions.sql` ~ `005_indexes.sql`。
-- `server/src/db/pool.ts`：连接池与健康检查。
+- `server/migrations/`，dbmate 纯 SQL 迁移（`-- migrate:up` / `-- migrate:down`）：
+  - `20261020000100_identity.sql`
+  - `20261020000200_social.sql`
+  - `20261020000300_locations.sql`
+  - `20261020000400_indexes.sql`
+  - `20261020000500_seed_helpers.sql`
+- `server/src/db/connection.ts`：打开唯一的 `better-sqlite3` 连接，应用 ADR-009 的 PRAGMA，提供 `SELECT 1` 健康检查与优雅关闭（关闭前 `PRAGMA wal_checkpoint(TRUNCATE)`）。
 - `server/src/db/repositories/`：
   - `UserRepository`
   - `DeviceRepository`
   - `FriendRepository`
   - `LocationRepository`
   - `TokenRepository`
-- 集成测试（Testcontainers）：
-  - 迁移 `up/down/up`；
+- 集成测试（Vitest + 临时文件数据库，不用 Testcontainers）：
+  - 迁移 `up/down/up` + `PRAGMA integrity_check`；
   - 规范化好友对；
-  - 重复 `client_msg_id`；
+  - 重复 `client_msg_id` 只产生一行；
   - `device_latest` 旧数据不覆盖新数据；
-  - 授权查询。
+  - 授权查询；
+  - 开启 `foreign_keys=ON` 后删除用户级联清理。
 
 **验收**
 
@@ -248,7 +269,8 @@ npm test -- db
 
 **注意**
 
-- `friendships` 写入前规范化为 `(low, high)`。
+- 所有写操作使用 `BEGIN IMMEDIATE`；SQLite 不支持 `SELECT ... FOR UPDATE`。
+- `friendships` 写入前规范化为 `(low, high)`（字符串比较，不依赖 `LEAST/GREATEST`）。
 - `locations` 的 `UNIQUE (device_id, client_msg_id)` 不能省。
 - 迁移中不要写死邀请码/密码。
 
@@ -329,7 +351,7 @@ wscat -c ws://127.0.0.1:9099/v1/ws
   - Node 24（最低 22）
   - `npm ci`
   - lint / typecheck / test / build
-  - PostgreSQL service 或 Testcontainers
+  - 测试使用临时文件数据库（无需 DB service / Testcontainers）
 - `.github/workflows/android.yml`：
   - JDK 17
   - `./gradlew testDebugUnitTest lint`
@@ -409,8 +431,8 @@ wscat -c ws://127.0.0.1:9099/v1/ws
 - 常用命令：
 
 ```bash
-make dev-up
 make migrate
+make db-shell
 make test
 ./gradlew :app:assembleDebug
 cd server && npm run dev
@@ -437,7 +459,7 @@ cd server && npm run dev
 **检查项**
 
 - [ ] 协议 v1 已冻结（允许后续新增字段，不允许破坏性修改）。
-- [ ] DDL 已落地，迁移可回滚。
+- [ ] DDL 已落地，迁移可回滚，`PRAGMA integrity_check = ok`。
 - [ ] 认证流程可端到端演示（注册 → 连接）。
 - [ ] Android 空壳可启动、权限流程可用。
 - [ ] CI 全绿。
@@ -477,9 +499,9 @@ Phase 1 不做：
 
 ```bash
 # 环境
-make dev-up
-make dev-down
 make migrate
+make db-reset
+make db-shell
 
 # Server
 cd server

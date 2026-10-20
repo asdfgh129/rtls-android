@@ -1,0 +1,39 @@
+{
+  "name": "@rtls/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "RTLS server skeleton (Fastify + WebSocket + SQLite)",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
+    "lint": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate": "dbmate --migrations-dir migrations --no-dump-schema --url \"sqlite:$DATABASE_PATH\""
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.3.4",
+    "better-sqlite3": "^13.0.3",
+    "fastify": "^5.12.7",
+    "jose": "^6.2.12",
+    "pino": "^10.4.0",
+    "uuid": "^14.0.3",
+    "ws": "^8.18.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.0",
+    "dbmate": "^2.37.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.5"
+  }
+}

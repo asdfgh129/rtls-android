@@ -33,16 +33,16 @@ Android ── WSS(443) ──> Cloudflare Edge
                               │ http://api:9099 (compose network)
                               ▼
                      api (Fastify + ws)
-                              │
-                              ▼
-                     postgres (container, no host port)
+                               │
+                               ▼
+                 data volume (/data/rtls.db, SQLite WAL)
 ```
 
 ### 端口与网络
 
 - `api` 只在 Compose 网络内暴露 `9099`；
 - 本地调试可映射 `127.0.0.1:9099:9099`，不映射 `0.0.0.0`；
-- `postgres` 不发布宿主机端口；
+- `api` 独占本地卷上的 SQLite 文件，不开放任何数据库端口；
 - 云主机安全组只允许 SSH（限制来源 IP）和出站；
 - cloudflared 使用 Tunnel Token，不把 Token 写入镜像。
 
@@ -64,7 +64,7 @@ Android ── WSS(443) ──> Cloudflare Edge
 
 | 配置 | 来源 |
 |---|---|
-| `DATABASE_URL` | 环境变量 / Secret |
+| `DATABASE_PATH` | 环境变量 / Secret | 默认 `/data/rtls.db`，挂载本机卷 |
 | `JWT_SECRET` | 环境变量 / Secret，≥ 256 位 |
 | `CLOUDFLARE_TUNNEL_TOKEN` | 环境变量 / Secret |
 | `PUBLIC_BASE_URL` | 环境变量 |
@@ -75,24 +75,27 @@ Android ── WSS(443) ──> Cloudflare Edge
 
 ### 备份与恢复
 
-- PostgreSQL 每日 `pg_dump`，保留 7 天日备 + 4 周周备；
+- 每日用 SQLite 在线备份 API：`sqlite3 /data/rtls.db ".backup '/backup/rtls-YYYYMMDD.db'"`；也可用 `VACUUM INTO`；
+- 保留 7 天日备 + 4 周周备；
+- 备份完成后执行 `PRAGMA integrity_check`，必须返回 `ok`；
 - 每月做一次恢复演练；
 - 迁移前自动备份；
-- 备份文件加密并异地保存。
+- 备份文件加密并异地保存；
+- 备份无需停服；恢复前必须停止 `api`，并删除目标位置的 `-wal` / `-shm` 文件。
 
 ### 可观测性
 
-- `/healthz`：进程 + DB 连通性；
+- `/healthz`：进程 + DB 连通性（`SELECT 1`，定期 `PRAGMA quick_check`）；
 - `/metrics`：仅内网/本机可访问；
 - 结构化日志（pino JSON）；
-- 关键指标：连接数、消息速率、推送延迟、DB 写入延迟、队列深度、认证失败、限流次数；
-- 告警：API 5xx、DB 连接失败、cloudflared 断开、磁盘使用率 > 80%。
+- 关键指标：连接数、消息速率、推送延迟、DB 写入延迟、`SQLITE_BUSY` / 锁等待次数、DB 文件大小、队列深度、认证失败、限流次数；
+- 告警：API 5xx、DB 连接失败、`SQLITE_BUSY` 持续出现、cloudflared 断开、磁盘使用率 > 80%。
 
 ### 部署流程
 
 1. CI 构建镜像并打不可变 tag（commit SHA）；
 2. 目标机 `docker compose pull`；
-3. 运行迁移（失败则停止）；
+3. 先执行 `.backup`，再运行迁移（失败则停止）；
 4. `docker compose up -d`；
 5. 健康检查通过后切流量；
 6. 保留上一版本镜像用于回滚。
@@ -104,8 +107,8 @@ Android ── WSS(443) ──> Cloudflare Edge
 ```bash
 # 源站
 ss -lntp | grep 9099        # 应只看到 127.0.0.1:9099 或容器内网
-docker compose ps           # postgres 不应有 0.0.0.0 端口映射
-# 云主机安全组：入站仅 SSH（限制来源），无 9099/5432
+docker compose ps           # 只应有 cloudflared / api，且无数据库端口映射
+# 云主机安全组：入站仅 SSH（限制来源），无 9099
 # 从外部网络扫描源站公网 IP（如果存在）
 ```
 
@@ -130,6 +133,8 @@ docker compose ps           # postgres 不应有 0.0.0.0 端口映射
 - 免费/非企业版 WebSocket 空闲超时不可调，必须保活。
 - Cloudflare 边缘重启会断开连接，客户端必须能快速重连。
 - 单机是单点故障；需要备份和恢复演练。
+- SQLite 只支持单实例/单进程写入，`api` 不能水平扩容；多实例需要先迁移存储（ADR-009）。
+- 数据库文件必须在目标机本地卷，禁止 NFS/SMB；磁盘损坏会同时影响服务与数据。
 - 如果未来多实例，需要 Redis/NATS 做跨实例广播与 presence。
 
 ## 备选方案
@@ -143,7 +148,7 @@ docker compose ps           # postgres 不应有 0.0.0.0 端口映射
 
 ## 验证方式
 
-- 公网只开放 443（Cloudflare 边缘）；源站无 9099/5432 入站。
+- 公网只开放 443（Cloudflare 边缘）；源站无 9099 入站，也没有数据库端口。
 - `wscat` 通过 `wss://` 连接，空闲 10 分钟不断开。
 - 手动重启 cloudflared，客户端在 10 秒内重连并恢复订阅。
-- 从备份恢复到一个空数据库，数据量与最新位置一致。
+- 从 `.backup` 恢复后 `PRAGMA integrity_check = ok`，`locations` 行数与 `device_latest` 与生产一致。

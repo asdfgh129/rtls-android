@@ -28,9 +28,9 @@ RTLS（Real-Time Location Sharing）是一个 Android 采集 → 服务端中转
 | 文档 | 内容 | 状态 |
 |---|---|---|
 | [`architecture/overview.md`](./architecture/overview.md) | 架构总览、数据流、模块职责、硬约束 | **现行** |
-| [`architecture/decisions/`](./architecture/decisions/README.md) | 架构决策记录（ADR-001 ~ ADR-008） | **权威** |
+| [`architecture/decisions/`](./architecture/decisions/README.md) | 架构决策记录（ADR-001 ~ ADR-009） | **权威** |
 | [`specs/protocol.md`](./specs/protocol.md) | WebSocket / REST 协议 v1 | **权威** |
-| [`specs/data-model.md`](./specs/data-model.md) | PostgreSQL DDL、索引、查询、保留策略 | **权威** |
+| [`specs/data-model.md`](./specs/data-model.md) | SQLite DDL、索引、查询、保留策略 | **权威** |
 | [`guides/development.md`](./guides/development.md) | 环境、工程结构、命令、分支流程、测试、AI 边界 | **现行** |
 | [`guides/deployment.md`](./guides/deployment.md) | 部署拓扑、配置、备份恢复、验证与回滚 | **现行** |
 | [`planning/roadmap.md`](./planning/roadmap.md) | Phase 1~6 的实施路线与验收标准 | **执行中** |
@@ -39,6 +39,7 @@ RTLS（Real-Time Location Sharing）是一个 Android 采集 → 服务端中转
 | [`reviews/2026-10-19-initial-plan.md`](./reviews/2026-10-19-initial-plan.md) | 初始方案评审记录 | 已完成 |
 | [`reviews/2026-10-19-phase0-docs.md`](./reviews/2026-10-19-phase0-docs.md) | Phase 0 文档评审记录与待办 | 已完成 |
 | [`archive/`](./archive) | 已归档的初始方案与实施步骤 | 归档 |
+| [`../CHANGELOG.md`](../CHANGELOG.md) | 每日变更记录（Keep a Changelog 1.1.0） | **持续更新** |
 
 ## 权威顺序
 
@@ -73,7 +74,7 @@ RTLS（Real-Time Location Sharing）是一个 Android 采集 → 服务端中转
 
 **服务端开发**
 
-1. ADR-001 / 002 / 003 / 004
+1. ADR-001 / 002 / 004 / 009（存储）
 2. `specs/protocol.md`
 3. `specs/data-model.md`
 4. `guides/development.md` §6
@@ -100,25 +101,24 @@ RTLS（Real-Time Location Sharing）是一个 Android 采集 → 服务端中转
 
 已完成：
 
-- ADR-001 ~ ADR-008 文档；
+- ADR-001 ~ ADR-009 文档（ADR-009 将存储改为 SQLite，取代 ADR-003）；
 - 协议规范 v1；
 - 数据模型；
 - 实施路线图；
 - 初始方案评审与 Phase 0 文档评审记录；
 - Phase 0 任务清单；
 - 正式文档（`architecture/overview.md`、`guides/development.md`、`guides/deployment.md`），初始文档已归档；
-- 文档按类型目录整理（`architecture/`、`specs/`、`guides/`、`planning/`、`reviews/`、`archive/`）。
+- 文档按类型目录整理（`architecture/`、`specs/`、`guides/`、`planning/`、`reviews/`、`archive/`）；
+- `server/` 骨架：Fastify + `/healthz`、SQLite 迁移（dbmate）、Repository 层、Vitest 测试；
+- 变更日志（`CHANGELOG.md`，按日更新）。
 
 待完成：
 
-- 仓库骨架；
-- 数据库迁移；
-- 服务端/Android 空壳；
+- Android 空壳；
 - CI；
 - 风险 spike；
 - `AGENTS.md` 更新；
-- ADR-009（批量补传与配额、注册错误码取舍、注销删除接口）；
-- `.gitignore`。
+- ADR-010（批量补传与配额、注册错误码取舍、注销删除接口）。
 
 ## 变更流程
 
@@ -128,3 +128,4 @@ RTLS（Real-Time Location Sharing）是一个 Android 采集 → 服务端中转
 4. 文档中的命令必须可复制执行；不可执行的示例要标注“示意”。
 5. 新文档按“目录与命名规范”落位；过时文档移入 `archive/` 并同步更新所有引用。
 6. 每次 Phase 结束更新本文件的“当前阶段”。
+7. 当天有代码、文档或配置改动 → 先在根目录 [`CHANGELOG.md`](../CHANGELOG.md) 的 `[Unreleased]` 下按日期记录，再提交。

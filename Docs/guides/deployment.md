@@ -22,8 +22,8 @@ Android ── WSS(443) ──> Cloudflare Edge
                               │ http://api:9099（compose 网络）
                               ▼
                      api（Fastify + ws）
-                              ▼
-                     postgres（容器，不发布宿主机端口）
+                               ▼
+              本地卷 data/（rtls.db，SQLite WAL）
 ```
 
 | 组件 | 端口 | 暴露范围 |
@@ -31,7 +31,7 @@ Android ── WSS(443) ──> Cloudflare Edge
 | Cloudflare Edge | 443 | 公网 |
 | `cloudflared` | 无 | 仅出站 |
 | `api` | 9099 | 仅 Compose 网络（本地调试可映射 `127.0.0.1:9099`） |
-| `postgres` | 5432 | 仅 Compose 网络 |
+| `data` 卷 | 无 | 仅 `api` 容器可写；不监听端口 |
 
 ---
 
@@ -39,9 +39,10 @@ Android ── WSS(443) ──> Cloudflare Edge
 
 - 一个托管在 Cloudflare 的域名；
 - 目标机：Docker + Compose、可出站访问 Cloudflare；
-- 云主机安全组：入站仅 SSH（限制来源 IP），**不放行 9099 / 5432**；
+- 云主机安全组：入站仅 SSH（限制来源 IP），**不放行 9099**；
 - CI 已能构建镜像并打不可变 tag（commit SHA）；
-- `pg_dump` 可用，备份存储位置已就绪。
+- `sqlite3` CLI 与 `dbmate` 可用；备份存储位置已就绪；
+- 本地 SSD 卷剩余空间 ≥ 预计 DB 大小的 4 倍（写入、WAL、备份临时文件）。
 
 ---
 
@@ -49,7 +50,7 @@ Android ── WSS(443) ──> Cloudflare Edge
 
 | 配置 | 来源 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | 环境变量 / Secret | Compose 内网地址 |
+| `DATABASE_PATH` | 环境变量 / Secret | 生产固定 `/data/rtls.db`，挂载本机卷 |
 | `JWT_SECRET` | 环境变量 / Secret | ≥ 256 位 |
 | `CLOUDFLARE_TUNNEL_TOKEN` | 环境变量 / Secret | 不写入镜像 |
 | `PUBLIC_BASE_URL` | 环境变量 | 公网 `https://rtls.example.com` |
@@ -69,10 +70,11 @@ Android ── WSS(443) ──> Cloudflare Edge
 # 1. 拉取镜像（不可变 tag）
 docker compose pull
 
-# 2. 迁移（失败则停止，不继续启动）
-cd server && npm run migrate up
+# 2. 迁移前先备份，失败则停止，不继续启动
+sqlite3 /data/rtls.db ".backup '/backup/rtls-pre-migrate.db'"
+cd server && npm run migrate up     # dbmate，读取 DATABASE_PATH
 
-# 3. 启动
+# 3. 启动（只启动一个 api 副本）
 cd .. && docker compose up -d
 
 # 4. 健康检查
@@ -84,6 +86,8 @@ wscat -c wss://rtls.example.com/v1/ws -H "Authorization: Bearer <token>"
 ```
 
 `/healthz` 与 `/metrics` 只在内网/本机暴露，不通过 Tunnel 发布。
+
+> **不要**把 `api` 扩到多个副本：SQLite 单写者不支持多进程并发写（ADR-009）。
 
 ---
 
@@ -113,13 +117,50 @@ wscat -c wss://rtls.example.com/v1/ws -H "Authorization: Bearer <token>"
 
 | 项 | 策略 |
 |---|---|
-| 频率 | 每日 `pg_dump` |
+| 频率 | 每日 `.backup` |
 | 保留 | 7 天日备 + 4 周周备 |
 | 加密 | 备份文件加密并异地保存 |
 | 迁移前 | 自动备份，失败则中止 |
 | 演练 | 每月一次恢复演练 |
 
-恢复验证要点：恢复到空库后，`locations` 行数与 `device_latest` 与生产一致。
+在线备份（不需要停服）：
+
+```bash
+sqlite3 /data/rtls.db ".backup '/backup/rtls-$(date +%F).db'"
+sqlite3 /backup/rtls-$(date +%F).db 'PRAGMA integrity_check;'   # 期望 ok
+```
+
+也可以用 `VACUUM INTO '/backup/rtls-$(date +%F).db'` 顺带压缩。
+
+> 禁止在 WAL 模式下直接 `cp` 正在使用的 `.db` 文件；副本可能缺少 `-wal` 中未合并的事务。
+
+恢复步骤：
+
+```bash
+# 1. 停止 API
+docker compose stop api
+
+# 2. 删除旧的 WAL/SHM，避免与恢复文件不匹配
+rm -f /data/rtls.db-wal /data/rtls.db-shm
+
+# 3. 替换数据库文件
+cp /backup/rtls-YYYY-MM-DD.db /data/rtls.db
+chmod 600 /data/rtls.db
+
+# 4. 校验并启动
+sqlite3 /data/rtls.db 'PRAGMA integrity_check;'   # 期望 ok
+docker compose start api
+```
+
+恢复验证要点：`locations` 行数与 `device_latest` 与生产一致，且 `/healthz` 返回 `{"status":"ok","db":"ok"}`。
+
+### SQLite 运行约束
+
+- 单写者、单进程：只能运行一个 `api` 副本（ADR-009）。
+- 数据库文件必须在本地卷，禁止 NFS/SMB/CIFS。
+- 恢复前必须停 API 并清理 `-wal`/`-shm`。
+- 监控 DB 文件大小与磁盘剩余；磁盘 > 80% 告警。
+- 保留期清理之后文件不一定会立即缩小，需要 `PRAGMA incremental_vacuum`（ADR-009）。
 
 ---
 
@@ -127,8 +168,8 @@ wscat -c wss://rtls.example.com/v1/ws -H "Authorization: Bearer <token>"
 
 - `/healthz`：进程 + DB 连通性；
 - `/metrics`：Prometheus，仅内网；
-- 关键指标：连接数、消息速率、推送延迟、DB 写入/查询延迟、队列深度、认证失败、限流次数；
-- 告警：API 5xx、DB 连接失败、cloudflared 断开、磁盘使用率 > 80%；
+- 关键指标：连接数、消息速率、推送延迟、DB 写入/查询延迟、`SQLITE_BUSY`/锁等待、DB 文件大小、队列深度、认证失败、限流次数；
+- 告警：API 5xx、DB 连接失败、`SQLITE_BUSY` 持续出现、cloudflared 断开、磁盘使用率 > 80%；
 - 日志：pino JSON，结构化。
 
 ---
@@ -140,9 +181,9 @@ wscat -c wss://rtls.example.com/v1/ws -H "Authorization: Bearer <token>"
 ```bash
 # 源站
 ss -lntp | grep 9099        # 只应看到 127.0.0.1:9099 或容器内网
-docker compose ps           # postgres 不应有 0.0.0.0 端口映射
+docker compose ps           # 只应有 cloudflared / api，且无数据库端口映射
 
-# 云主机安全组：入站仅 SSH（限制来源），无 9099 / 5432
+# 云主机安全组：入站仅 SSH（限制来源），无 9099
 # 若源站有公网 IP：从外部网络扫描该 IP
 ```
 
@@ -153,7 +194,7 @@ docker compose ps           # postgres 不应有 0.0.0.0 端口映射
 1. 确认故障版本镜像 tag（commit SHA）；
 2. `docker compose down`；
 3. 用上一个可用 tag 启动（若涉及 DB 迁移回滚，先执行 `npm run migrate down`）；
-4. 恢复数据（如需）：用最近一次 `pg_dump` 恢复到空库；
+4. 恢复数据（如需）：停 API，删除 `-wal`/`-shm`，用最近一次 `.backup` 替换 `/data/rtls.db`，再 `PRAGMA integrity_check`；
 5. `curl /healthz` + `wscat` 验证；
 6. 记录故障时间、影响范围、根因。
 
@@ -163,12 +204,13 @@ docker compose ps           # postgres 不应有 0.0.0.0 端口映射
 
 ## 11. 发布检查清单
 
-- [ ] 源站无 9099 / 5432 入站；
+- [ ] 源站无 9099 入站，也没有数据库端口；
 - [ ] 公网只开放 443；
+- [ ] 只有一个 `api` 副本，DB 文件在本地卷；
 - [ ] WSS 空闲 10 分钟不断开；
 - [ ] 未授权 / 越权 / 重放全部被拒；
 - [ ] Token 只在 Header，日志无 Token；
-- [ ] 备份可恢复（已演练）；
+- [ ] `PRAGMA integrity_check = ok`，`.backup` 可恢复（已演练）；
 - [ ] 百度隐私流程可演示，AK 不进仓库；
 - [ ] 保留上一版本镜像，回滚路径已验证。
 

@@ -1,6 +1,26 @@
 # 系统文件
 .DS_Store
 
+# 环境变量
+.env
+.env.local
+
+# Node
+node_modules/
+dist/
+coverage/
+*.log
+
 # 工具临时目录
 .omo/
 .freeway/
+
+# 本地 SQLite 数据库（含 WAL/SHM）
+server/data/
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

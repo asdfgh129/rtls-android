@@ -27,7 +27,7 @@ RTLS（Real-Time Location Sharing）让**互相授权的好友**在 Android 上�
 | 不做 | 原因 |
 |---|---|
 | 开放注册 | 邀请制，见 ADR-004 |
-| TDengine / 时序库双写 | MVP 单库，见 ADR-003 |
+| TDengine / 时序库双写 | MVP 单库，见 ADR-009 |
 | 多实例横向扩展与跨实例广播 | 单机 MVP，见 ADR-001 / ADR-008 |
 | 组织、群组、地理围栏、告警 | 当前只有好友互查，见 ADR-005 |
 | 百度鹰眼纠偏 | 优先本地滤波，见 ADR-006 |
@@ -43,7 +43,7 @@ RTLS（Real-Time Location Sharing）让**互相授权的好友**在 Android 上�
 | Cloudflare Edge | 公网入口，终止 TLS（WSS:443），转发到 Tunnel |
 | `cloudflared` | 容器内的出站隧道客户端，无入站端口 |
 | `api`（Fastify） | REST + WebSocket 同进程；鉴权、校验、限流、订阅、落库 |
-| PostgreSQL 16 | 唯一持久化存储（身份、关系、位置） |
+| SQLite 3.45+ | 唯一持久化存储（单文件，身份、关系、位置） |
 | 运维 CLI | 邀请码管理、清理任务、备份 |
 
 ---
@@ -78,13 +78,13 @@ RTLS（Real-Time Location Sharing）让**互相授权的好友**在 Android 上�
 │  └────────┘ └────────┘ └──────────┘ └────────────────┘   │
 │  ┌────────────────┐ ┌──────────┐ ┌──────────────────┐    │
 │  │ locations/     │ │  db/     │ │ protocol/        │    │
-│  │ 写入/最新/历史  │ │ Pool+Repo │ │ Zod schema/错误码 │    │
+│  │ 写入/最新/历史  │ │ Conn+Repo│ │ Zod schema/错误码 │    │
 │  └────────────────┘ └──────────┘ └──────────────────┘    │
 └──────────────────────────────────────────────────────────┘
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────┐
-│ PostgreSQL 16（容器，不发布宿主机端口）                     │
+│ SQLite 3.45+（/data/rtls.db，WAL，本机卷）                  │
 │  users / devices / refresh_tokens / invite_codes         │
 │  friend_requests / friendships / blocks                  │
 │  locations / device_latest                               │
@@ -136,9 +136,9 @@ RTLS（Real-Time Location Sharing）让**互相授权的好友**在 Android 上�
 | `ws/` | upgrade 鉴权、心跳、订阅注册表、fan-out、限流 | 跨实例广播 |
 | `locations/` | 位置写入、最新位置、历史查询、保留清理 | 纠偏算法 |
 | `friends/` | 好友申请状态机、好友关系、拉黑 | 群组 |
-| `db/` | `pg` 连接池、Repository、迁移执行 | ORM 隐式行为 |
+| `db/` | `better-sqlite3` 连接、Repository、迁移执行 | ORM 隐式行为 |
 
-目录与依赖基线见 ADR-001；Repository 接口见 ADR-003。
+目录与依赖基线见 ADR-001；存储与 Repository 接口见 ADR-009。
 
 ---
 
@@ -167,7 +167,7 @@ RTLS（Real-Time Location Sharing）让**互相授权的好友**在 Android 上�
 |---|---|---|
 | 实时协议 | 原生 WebSocket + JSON envelope（v1），非 Socket.IO | ADR-002 |
 | 服务端栈 | Node.js 24 LTS（最低 22）+ TypeScript + Fastify | ADR-001 |
-| 存储 | PostgreSQL 16 单库，位置与关系同库 | ADR-003 |
+| 存储 | SQLite 3.45+ 单文件（WAL），位置与关系同库 | ADR-009 |
 | 身份 | `users`（关系/好友码/分享开关）+ `devices`（位置/Token/在线） | ADR-005 |
 | 坐标 | 全链路 WGS-84，仅百度渲染层转 BD-09 | ADR-006 |
 | 定位源 | `LocationSource` 抽象，GMS 不可用时百度/高德兜底 | ADR-007 |
@@ -186,6 +186,8 @@ RTLS（Real-Time Location Sharing）让**互相授权的好友**在 Android 上�
 记录在内、不是缺陷，但实现与排障时要知道：
 
 - 单实例部署：订阅表与 presence 在内存，多实例需 Redis/NATS（ADR-001 / ADR-008）；
+- SQLite 单写者 + 单进程：不支持多个 API 实例并发写；扩容需迁移存储（ADR-009）；
+- DB 文件必须在本地卷，禁止 NFS/SMB；磁盘是单点故障（ADR-009）；
 - Access Token 吊销最多有 15 分钟生效延迟（ADR-004）；
 - 单连接 `subscribe` 上限 100 个目标；
 - GCJ-02 → WGS-84 是近似转换，误差需在 UI 上可接受（ADR-006）；

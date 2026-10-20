@@ -10,12 +10,13 @@
 |---|---|---|---|
 | [ADR-001](./ADR-001-server-stack.md) | 服务端技术栈 | Accepted | [初始方案 2.1](../../archive/plan-2026-10-17.md) / [初始步骤 阶段一](../../archive/step-2026-10-17.md) |
 | [ADR-002](./ADR-002-websocket-protocol.md) | 实时通信协议 | Accepted | [初始方案 2.2](../../archive/plan-2026-10-17.md) / [初始步骤 阶段一、二](../../archive/step-2026-10-17.md) |
-| [ADR-003](./ADR-003-mvp-storage.md) | MVP 存储方案 | Accepted | [初始方案 四](../../archive/plan-2026-10-17.md) / [初始步骤 阶段一](../../archive/step-2026-10-17.md) |
+| [ADR-003](./ADR-003-mvp-storage.md) | MVP 存储方案 | Superseded（由 ADR-009 取代） | [初始方案 四](../../archive/plan-2026-10-17.md) / [初始步骤 阶段一](../../archive/step-2026-10-17.md) |
 | [ADR-004](./ADR-004-auth.md) | 认证与令牌生命周期 | Accepted | [初始方案 2.3、4.2](../../archive/plan-2026-10-17.md) / [初始步骤 阶段四](../../archive/step-2026-10-17.md) |
 | [ADR-005](./ADR-005-identity.md) | 用户与设备身份模型 | Accepted | [初始方案 3.4、4.2](../../archive/plan-2026-10-17.md) |
 | [ADR-006](./ADR-006-coordinate-system.md) | 坐标系统与转换 | Accepted | [初始方案 3.3](../../archive/plan-2026-10-17.md) / [初始步骤 阶段三](../../archive/step-2026-10-17.md) |
 | [ADR-007](./ADR-007-location-source.md) | Android 定位源抽象 | Accepted | [初始方案 3.1](../../archive/plan-2026-10-17.md) / [初始步骤 阶段二](../../archive/step-2026-10-17.md) |
 | [ADR-008](./ADR-008-deployment.md) | 部署与隧道 | Accepted | [初始方案 五](../../archive/plan-2026-10-17.md) / [初始步骤 阶段四](../../archive/step-2026-10-17.md) |
+| [ADR-009](./ADR-009-sqlite-storage.md) | MVP 存储改为 SQLite | Accepted | 取代 [ADR-003](./ADR-003-mvp-storage.md) |
 
 ## ADR 状态定义
 

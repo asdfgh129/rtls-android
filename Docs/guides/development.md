@@ -20,7 +20,9 @@
 | Android Studio | 最新稳定版 | Android IDE / SDK | — |
 | Node.js | ≥ 22（CI 用 24） | server 运行时 | `node --version` |
 | npm | 随 Node | 包管理 | `npm --version` |
-| Docker + Compose | 最新版 | 本地 PostgreSQL | `docker compose version` |
+| `sqlite3` CLI | ≥ 3.45 | 数据库检查与备份 | `sqlite3 --version` |
+| `dbmate` | 最新版 | SQL 迁移 | `dbmate --version` |
+| Docker + Compose | 最新版 | 生产/部署演练（本地开发不需要） | `docker compose version` |
 | Git | 最新版 | 版本控制 | `git --version` |
 | `wscat`（可选） | 最新 | WebSocket 手工调试 | `npm i -g wscat` |
 
@@ -42,6 +44,7 @@ RTLS/
 ├── server/
 │   ├── src/{app,config,http,ws,auth,friends,locations,db,protocol}
 │   ├── migrations/
+│   ├── data/                     # 本地 SQLite 文件（不提交）
 │   ├── test/
 │   ├── package.json
 │   └── tsconfig.json
@@ -70,9 +73,10 @@ Gradle 模块路径一律写作 `:app`、`:core:model`；磁盘路径写作 `app
 ```bash
 git clone <repo> && cd RTLS
 cp .env.example .env            # .env 不提交
-make dev-up                     # 启动 PostgreSQL 16
-make migrate                    # 空库迁移
-psql "$DATABASE_URL" -c 'select version();'
+export DATABASE_PATH=./server/data/rtls.db
+mkdir -p server/data
+make migrate                    # 创建 SQLite 文件并执行迁移
+sqlite3 "$DATABASE_PATH" 'select sqlite_version();'
 ```
 
 `.env.example`：
@@ -80,7 +84,7 @@ psql "$DATABASE_URL" -c 'select version();'
 ```dotenv
 NODE_ENV=development
 PORT=9099
-DATABASE_URL=postgres://rtls:rtls@127.0.0.1:5432/rtls
+DATABASE_PATH=./server/data/rtls.db
 JWT_SECRET=change-me-at-least-32-bytes
 LOCATION_RETENTION_DAYS=90
 PUBLIC_BASE_URL=http://127.0.0.1:9099
@@ -88,7 +92,8 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 
 注意：
 
-- PostgreSQL 只映射 `127.0.0.1:5432`，不映射 `0.0.0.0`；
+- `DATABASE_PATH` 必须导出为环境变量，或由 `server/src/config.ts` 从 `.env` 读取后再传给 dbmate；Makefile 不会自动加载 `.env`。
+- SQLite 文件权限 `0600`、目录 `0700`；不要放在 NFS/SMB。
 - `JWT_SECRET` ≥ 256 位，来自环境变量/Secret，不进仓库；
 - 百度 AK 放 `local.properties`（不提交），通过 Manifest 占位符注入。
 
@@ -98,10 +103,10 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 
 | 场景 | 命令 |
 |---|---|
-| 环境 | `make dev-up` / `make dev-down` / `make migrate` |
+| 环境 | `make migrate` / `make db-reset` / `make db-shell` |
 | Server 开发 | `cd server && npm ci && npm run dev` |
 | Server 校验 | `cd server && npm run lint && npm run build && npm test` |
-| Server 迁移 | `cd server && npm run migrate up` / `npm run migrate down` |
+| Server 迁移 | `make migrate` / `make migrate-down` / `make migrate-status`（Makefile 注入绝对 `DATABASE_PATH`；直接用 `npm run migrate` 需先导出该变量） |
 | Android 构建 | `./gradlew :app:assembleDebug` |
 | Android 测试 | `./gradlew :app:testDebugUnitTest` |
 | Android lint | `./gradlew :app:lintDebug` |
@@ -127,11 +132,13 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 ## 6. Server 工程约定
 
 - TypeScript `strict: true`；Fastify 5 + `@fastify/websocket`；Zod 做协议与配置校验；
-- 依赖（Phase 0 基线）：`fastify`、`@fastify/websocket`、`ws`、`zod`、`pg`、`node-pg-migrate`、`jose`、`pino`、`vitest`、`testcontainers`；
-- **不引入**：`socket.io`、`tdengine-client`；
+- 依赖（Phase 0 基线）：`fastify`、`@fastify/websocket`、`ws`、`zod`、`better-sqlite3`、`uuid`、`dbmate`、`jose`、`pino`、`vitest`；
+- **不引入**：`socket.io`、`tdengine-client`、`pg`、`node-pg-migrate`、`testcontainers`；
 - 启动时校验配置，失败立即退出；
+- 全局只打开一个 `better-sqlite3` 连接；打开后立即执行 ADR-009 的 PRAGMA（`journal_mode=WAL`、`synchronous=NORMAL`、`foreign_keys=ON`、`busy_timeout=5000`、`temp_store=MEMORY`）；
+- 所有写操作使用 `BEGIN IMMEDIATE`，位置批量写入必须在同一事务内；
 - SQL 与行映射写在 `db/repositories/`，不在路由里拼 SQL；
-- 迁移文件只写结构，不写死邀请码/密码；
+- 迁移文件只写结构，不写死邀请码/密码；不依赖 `SELECT ... FOR UPDATE`；
 - 位置坐标、Token、Refresh、邀请码不写入 INFO 日志。
 
 ---
@@ -144,6 +151,7 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 | PR | 至少 1 个 review；CI 全绿才能合并 |
 | CI | server：lint / typecheck / test / build；Android：`testDebugUnitTest` + `lintDebug`；security：secret scan + 依赖审计 |
 | Action | 第三方 Action 固定到 commit SHA，不用浮动 tag |
+| 变更日志 | 当天改动记入根目录 [`CHANGELOG.md`](../../CHANGELOG.md) 的 `[Unreleased]`，与代码同一提交 |
 | DoD | 见 [`roadmap.md`](../planning/roadmap.md) §11 |
 
 禁止给 AI Agent 的 `issue_comment` 工作流 `contents: write` 权限（公开仓库风险）。
@@ -159,7 +167,9 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 - 鉴权（过期、错误签名、错误 `aud`、`token_version` 不匹配）；
 - 位置写入幂等（重复 `clientMsgId`）；
 - 授权矩阵（非好友 / 被拉黑 / 关闭分享 / 设备撤销）；
-- 迁移 `up → down → up`。
+- 迁移：每个测试用独立临时文件数据库执行 `up → down → up`，并校验 `PRAGMA integrity_check = ok`；
+- 级联删除：开启 `foreign_keys=ON` 后删除用户，设备/位置/Token 全部消失；
+- 重复 `(device_id, client_msg_id)` 不产生第二行；更旧的 `server_ts` 不覆盖 `device_latest`。
 
 ---
 
@@ -196,6 +206,9 @@ PUBLIC_BASE_URL=http://127.0.0.1:9099
 | 空闲几分钟后连接断开 | Cloudflare 空闲超时，需 30s 应用层心跳（ADR-008） |
 | 补传很慢 | 协议限流 60 条/分钟；批量补传方案待 ADR 决策（见评审记录） |
 | 后台定位被杀 | 前台服务 + OEM 白名单引导；不要用固定 5 秒高精度常驻（ADR-007） |
+| 写入报 `database is locked` / `SQLITE_BUSY` | 用 `BEGIN IMMEDIATE`、缩短写事务、批量写入；确认只有一个 API 进程（ADR-009） |
+| 直接 `cp` 备份 WAL 模式数据库 | WAL 可能未合并，副本不一致；用 `sqlite3 <db> ".backup '<file>'"` 或 `VACUUM INTO` |
+| 多个 API 实例共享同一 DB 文件 | 不支持；SQLite 单写者，扩容需先迁移存储（ADR-009） |
 | 用 `nmap` 扫公网域名"端口未开放" | 扫到的是 Cloudflare 边缘，不能证明源站安全（ADR-008） |
 
 ---
